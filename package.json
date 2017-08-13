@@ -1,0 +1,26 @@
+{
+    "name": "gopivotaltracker",
+    "version": "0.0.1",
+    "description": "A lightweight command line tool to help Pivotal Tracker users to have legit status.",
+    "main": "index.js",
+    "bin": {
+        "gopivotaltracker": "./bin/gopivotaltracker"
+    },
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "author": "Leo Wu",
+    "license": "ISC",
+    "dependencies": {
+        "columnify": "^1.5.4",
+        "commander": "^2.11.0",
+        "cron": "^1.2.1",
+        "js-beautify": "^1.6.14",
+        "lockfile": "^1.0.3",
+        "moment": "^2.18.1",
+        "moment-timezone": "^0.5.13",
+        "node-notifier": "^5.1.2",
+        "request": "^2.81.0",
+        "request-promise": "^4.2.1"
+    }
+}

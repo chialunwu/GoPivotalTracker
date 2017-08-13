@@ -1,0 +1,151 @@
+#!/usr/bin/env node
+/* eslint-disable no-console */
+
+const beautify = require('js-beautify').js_beautify;
+const { execSync } = require('child_process');
+const columnify = require('columnify');
+const CronJob = require('cron').CronJob;
+const fs = require('fs');
+const lockFile = require('lockfile');
+const moment = require('moment-timezone');
+const path = require('path');
+const program = require('commander');
+const Tracker = require('../');
+
+const HOME_DIR = process.env.HOME || process.env.HOMEPATH || process.env.USERPROFILE;
+const LOCK_FILE = path.join(HOME_DIR, '.gopivotaltracker.lock');
+
+
+/* 
+ * Hack to replace terminal-notifier icon
+ * ref: https://github.com/mikaelbr/node-notifier/issues/71
+ */
+const cwd = path.join(__dirname, '..', 'node_modules/node-notifier/vendor/terminal-notifier.app/Contents');
+const iconPath = path.join(__dirname, '..', 'resources/gopivotaltracker.icns');
+const targetIconPath = path.join(cwd, 'Resources/Genius.icns');
+
+if (!fs.existsSync(targetIconPath)) {
+    execSync('sed -i -- \'s/terminal-notifier/genius-notifier/g\' Info.plist', { cwd });
+    execSync('sed -i -- \'s/Terminal/Genius/g\' Info.plist', { cwd });
+    execSync('rm Resources/Terminal.icns', { cwd });
+    execSync(`cp ${iconPath} ${targetIconPath}`);
+}
+
+
+/*
+ * Settings
+ */
+const SETTINGS = path.join(HOME_DIR, '.gopivotaltracker.settings');
+const settings = fs.existsSync(SETTINGS) ? JSON.parse(fs.readFileSync(SETTINGS)) : {};
+
+program
+    .version('0.0.1')
+    .option('-t, --token <string>', 'Set API token (required at first time)')
+    .option('-p, --project <string>', 'Set project name (required at first time)')
+    .option('-f, --frequency <string>', 'Set tracking freqeuncy in minuites (default=10)')
+    .option('-h, --hours <string>', 'Set tracking hours (default=10-13,14-19')
+    .option('-w, --weekdays <string>', 'Set tracking weekdays (default=1-5)')
+    .option('-z, --timezone <string>', 'Set timezone (default=your local timezone)')
+    .option('--autounstart', 'Auto unstart all stories at the end of tracking time everyday')
+    .parse(process.argv);
+
+const token = program.token || settings.token;
+const project = program.project || settings.project;
+const frequency = program.frequency || settings.frequency || 10;
+const hours = program.hours || settings.hours || '10-13,14-19';
+const weekdays = program.weekdays || settings.weekdays || '1-5';
+const timezone = program.timezone || settings.timezone || moment.tz.guess();
+const autounstart = program.autounstart || settings.autounstart || false;
+
+const trackCronPattern = `0 0-59/${frequency} ${hours} * * ${weekdays}`;
+const unstartHour = hours.split(/[,-]/).pop();
+const unstartCronPattern = `* * ${unstartHour} * * ${weekdays}`;
+
+if (!token || !project) {
+    console.error('token or project missing');
+
+    process.exit(1);
+}
+
+// Save settings then next time don't need to specify options
+if (
+    program.token || program.project || program.frequency ||
+    program.hours || program.weekdays || program.timezone ||
+    program.autounstart
+) {
+    fs.writeFileSync(SETTINGS, beautify(JSON.stringify({
+        token,
+        project,
+        frequency,
+        hours,
+        weekdays,
+        timezone,
+        autounstart,
+    })));
+}
+
+const settingMsg = {
+    'API token:':  token,
+    'Project name:': project,
+    'Tracking frequency:': `Every ${frequency} mins`,
+    'Tracking hours:': hours,
+    'Tracking weekdays:': weekdays,
+    'Timezone:': timezone,
+    'Autounstart:': autounstart,
+};
+
+if (autounstart) {
+    settingMsg['Unstart time:'] = unstartHour;
+}
+
+console.log('\n' + columnify(settingMsg, {columns: ['option', 'value']}) + '\n');
+
+
+/*
+ * Start running
+ */
+const tracker = new Tracker({
+    apiToken: token,
+    projectName: project,
+});
+
+function unlock() {
+    lockFile.unlock(LOCK_FILE);
+    process.exit(1);
+}
+
+lockFile.lock(LOCK_FILE, {}, function(err) {
+    if (err) {
+        console.error('There is already a gopivotaltracker process running...');
+
+        process.exit(1);
+    }
+
+    try {
+        // Start tracking cron job
+        new CronJob(trackCronPattern, function() {
+            console.log(`Check: ${moment().format('dddd h:mm a')}`);
+            tracker.checkStartedStoriesStatus();
+        }, function() {
+        }, true, timezone);
+
+        if (autounstart) {
+            // Start unstart story cron job
+            new CronJob(unstartCronPattern, function() {
+                console.log(`Unstart: ${moment().format('dddd h:mm a')}`);
+                tracker.unstartAllStories();
+            }, function() {
+            }, true, timezone);
+        }
+    } catch(err) {
+        console.error(`Invalid cron pattern - ${trackCronPattern}`);
+
+        process.exit(1);
+    }
+
+    console.log('running...\n');
+
+    process.on('exit', unlock);
+    process.on('SIGINT', unlock);
+    process.on('uncaughtException', unlock);
+});
