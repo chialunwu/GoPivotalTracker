@@ -59,7 +59,7 @@ const autounstart = program.autounstart || settings.autounstart || false;
 
 const trackCronPattern = `0 0-59/${frequency} ${hours} * * ${weekdays}`;
 const unstartHour = hours.split(/[,-]/).pop();
-const unstartCronPattern = `* * ${unstartHour} * * ${weekdays}`;
+const unstartCronPattern = `0 0 ${unstartHour} * * ${weekdays}`;
 
 if (!token || !project) {
     console.error('token or project missing');
