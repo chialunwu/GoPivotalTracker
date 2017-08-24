@@ -1,6 +1,6 @@
 {
     "name": "gopivotaltracker",
-    "version": "0.0.2",
+    "version": "0.0.3",
     "description": "A lightweight command line tool to help Pivotal Tracker users to have legit status of stories.",
     "main": "index.js",
     "bin": {
