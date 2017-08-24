@@ -6,14 +6,13 @@ const { execSync } = require('child_process');
 const columnify = require('columnify');
 const CronJob = require('cron').CronJob;
 const fs = require('fs');
-const lockFile = require('lockfile');
 const moment = require('moment-timezone');
 const path = require('path');
 const program = require('commander');
+const range = require('lodash').range;
 const Tracker = require('../');
 
 const HOME_DIR = process.env.HOME || process.env.HOMEPATH || process.env.USERPROFILE;
-const LOCK_FILE = path.join(HOME_DIR, '.gopivotaltracker.lock');
 
 
 /* 
@@ -35,11 +34,30 @@ if (!fs.existsSync(targetIconPath)) {
 /*
  * Settings
  */
+
+function processHours(hours) {
+    let results = [];
+    const arr = hours.split(',');
+
+    arr.forEach((e) => {
+        const arr2 = e.split('-');
+        const length = arr2.length;
+
+        if (length > 1) {
+            results = results.concat(range(arr2[0], arr2[length - 1]));
+        } else {
+            results.push(Number(arr2[0]));
+        }
+    });
+
+    return new Set(results);
+}
+
 const SETTINGS = path.join(HOME_DIR, '.gopivotaltracker.settings');
 const settings = fs.existsSync(SETTINGS) ? JSON.parse(fs.readFileSync(SETTINGS)) : {};
 
 program
-    .version('0.0.1')
+    .version('0.0.3')
     .option('-t, --token <string>', 'Set API token (required at first time)')
     .option('-p, --project <string>', 'Set project name (required at first time)')
     .option('-f, --frequency <string>', 'Set tracking freqeuncy in minuites (default=10)')
@@ -58,8 +76,8 @@ const timezone = program.timezone || settings.timezone || moment.tz.guess();
 const autounstart = program.autounstart || settings.autounstart || false;
 
 const trackCronPattern = `0 0-59/${frequency} ${hours} * * ${weekdays}`;
-const unstartHour = hours.split(/[,-]/).pop();
-const unstartCronPattern = `0 0 ${unstartHour} * * ${weekdays}`;
+const hoursSet = processHours(hours);
+const unstartHour = Math.max.apply(null, Array.from(hoursSet)) + 1;
 
 if (!token || !project) {
     console.error('token or project missing');
@@ -109,43 +127,43 @@ const tracker = new Tracker({
     projectName: project,
 });
 
-function unlock() {
-    lockFile.unlock(LOCK_FILE);
+try {
+    // Start cron job
+    new CronJob(trackCronPattern, function() {
+        const currentHour = moment().tz(timezone).hour();
+        const currentTime = moment().format('dddd h:mm a');
+
+        // Double-check in case CronbJob is naughty
+        if (hoursSet.has(currentHour)) {
+            tracker.checkStartedStoriesStatus()
+                .then(() => {
+                    console.log(`Check: ${currentTime}`);
+                })
+                .catch((err) => {
+                    console.log(`Fail to check: ${currentTime}`);
+                })
+        }
+
+        if (autounstart && (currentHour == unstartHour)) {
+            tracker.unstartAllStories()
+                .then(() => {
+                    console.log(`Unstart: ${currentTime}`);
+
+                    process.exit(0);
+                })
+                .catch((err) => {
+                    console.log(`Fail to unstart: ${currentTime}`);
+
+                    process.exit(1);
+                })
+
+        }
+    }, function() {
+    }, true, timezone);
+} catch(err) {
+    console.error(`Invalid cron pattern - ${trackCronPattern}`);
+
     process.exit(1);
 }
 
-lockFile.lock(LOCK_FILE, {}, function(err) {
-    if (err) {
-        console.error('There is already a gopivotaltracker process running...');
-
-        process.exit(1);
-    }
-
-    try {
-        // Start tracking cron job
-        new CronJob(trackCronPattern, function() {
-            console.log(`Check: ${moment().format('dddd h:mm a')}`);
-            tracker.checkStartedStoriesStatus();
-        }, function() {
-        }, true, timezone);
-
-        if (autounstart) {
-            // Start unstart story cron job
-            new CronJob(unstartCronPattern, function() {
-                console.log(`Unstart: ${moment().format('dddd h:mm a')}`);
-                tracker.unstartAllStories();
-            }, function() {
-            }, true, timezone);
-        }
-    } catch(err) {
-        console.error(`Invalid cron pattern - ${trackCronPattern}`);
-
-        process.exit(1);
-    }
-
-    console.log('running...\n');
-
-    process.on('exit', unlock);
-    process.on('SIGINT', unlock);
-    process.on('uncaughtException', unlock);
-});
+console.log('running...\n');

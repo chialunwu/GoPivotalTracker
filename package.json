@@ -1,7 +1,7 @@
 {
     "name": "gopivotaltracker",
     "version": "0.0.2",
-    "description": "A lightweight command line tool to help Pivotal Tracker users to have legit status.",
+    "description": "A lightweight command line tool to help Pivotal Tracker users to have legit status of stories.",
     "main": "index.js",
     "bin": {
         "gopivotaltracker": "./bin/gopivotaltracker"
@@ -20,7 +20,7 @@
         "commander": "^2.11.0",
         "cron": "^1.2.1",
         "js-beautify": "^1.6.14",
-        "lockfile": "^1.0.3",
+        "lodash": "^4.17.4",
         "moment": "^2.18.1",
         "moment-timezone": "^0.5.13",
         "node-notifier": "^5.1.2",
